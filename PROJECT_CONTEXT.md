@@ -1,124 +1,159 @@
-# Termwise — AI-to-AI B2B Payment Negotiator
-## Project Context, Architecture, & Technical Specification
+# Termwise — Comprehensive Architecture & Technical Deep-Dive Specification
 
-> **Built for:** Razorpay AI Buildathon 2026 — Track 1 (AI Growth & Agentic Commerce)  
-> **Core Principle:** *LLM proposes. Policy decides. Razorpay executes. Data learns.*
+> **Event:** Razorpay AI Buildathon 2026 — Track 1 (AI Growth & Agentic Commerce)  
+> **Core Architectural Principle:** *LLM proposes. Policy decides. Razorpay executes. Data learns.*  
+> **Repository:** [https://github.com/Akuma21205/Termwise.git](https://github.com/Akuma21205/Termwise.git)
 
 ---
 
-## 1. Problem Statement & High-Level Goals
+## Table of Contents
+1. [Executive Overview & Problem Statement](#1-executive-overview--problem-statement)
+2. [Non-Negotiable System Invariants](#2-non-negotiable-system-invariants)
+3. [Repository Directory & Complete File Breakdown](#3-repository-directory--complete-file-breakdown)
+4. [Component Technical Deep-Dive](#4-component-technical-deep-dive)
+   - [Core Layer (Models, Policy Engine, Economic Model, Contract)](#a-core-layer)
+   - [Agentic LLM Layer (Prompts, Buyer Agent, Seller Agent, Orchestrator)](#b-agentic-llm-layer)
+   - [Razorpay Execution Layer (Client & Webhooks)](#c-razorpay-execution-layer)
+   - [API & Storage Layer (FastAPI, SQLite Audit Log, Human Approval)](#d-api--storage-layer)
+   - [Simulator & Evaluation Engine (Data Generator, Baselines, Evaluator)](#e-simulator--evaluation-engine)
+   - [Streamlit Frontend Dashboard](#f-streamlit-frontend-dashboard)
+5. [Handled Failure Modes & Edge Cases](#5-handled-failure-modes--edge-cases)
+6. [Comprehensive Test Suite Matrix (21/21 Passing)](#6-comprehensive-test-suite-matrix-2121-passing)
+7. [Environment & Deployment Setup Guide](#7-environment--deployment-setup-guide)
 
-SMEs selling to large enterprise buyers routinely get forced into unfavorable payment credit terms (Net-60, Net-90) because they lack negotiating leverage and cannot easily quantify what extended credit terms actually cost in financing and risk.
+---
 
-**Termwise** is an agentic commercial platform where a buyer-side AI agent and a seller-side AI agent negotiate B2B payment terms (order value, quantity, payment credit term days, early payment discount %, delivery deadline) inside hard financial policy bounds set by the seller merchant.
+## 1. Executive Overview & Problem Statement
+
+### The B2B Commerce Gap
+Small and Medium Enterprises (SMEs) selling to large enterprise buyers face a critical working capital dilemma:
+- Enterprise buyers demand extended credit terms (Net-60, Net-90 days) and early payment discounts.
+- SMEs lack negotiating power, real-time risk visibility, and financial modeling tools to evaluate what extended credit terms actually cost in annual financing costs, inflation, and default probability.
+- Manual payment term negotiation is slow, rigid, and often leads to bad debt or cash flow crises.
+
+### The Termwise Solution
+**Termwise** is an agentic commercial platform where a **Buyer AI Agent** and a **Seller AI Agent** negotiate B2B payment terms (order value, quantity, payment credit term days, early payment discount %, delivery deadline) inside hard financial policy bounds set by the merchant.
 
 Upon reaching agreement:
 1. The agreement is validated by a **deterministic Policy Engine** (never the LLM).
-2. It is converted into a structured contract.
+2. It is converted into a structured `Contract` object.
 3. It triggers **Razorpay Test-Mode payment lifecycle execution** (Order creation → Payment Link creation with `expire_by = payment_term_days` due-date expiry → webhook-driven settlement tracking).
-4. Every negotiation step, policy check, and execution event is logged in an **append-only audit trail**.
+4. Every negotiation step, policy check, human override, and execution event is logged in an **append-only audit trail**.
 
 ---
 
-## 2. Non-Negotiable Architectural Principles
+## 2. Non-Negotiable System Invariants
 
 1. **Zero LLM Execution Authority Over Money:**  
    LLMs (Buyer and Seller agents) ONLY produce structured `Proposal` objects. Every proposal—without exception—must pass through `core/policy_engine.py::validate()` before it can become a contract or touch Razorpay.
 2. **Minimal 4-Component Boundary:**  
-   The system strictly consists of 4 components:
-   - **Buyer Agent** (LLM)
-   - **Seller Agent** (LLM calling Economic Model as a tool)
-   - **Policy Engine** (Pure Python, deterministic)
-   - **Economic Model** (Pure Python math formula)  
-   No extraneous agent nodes (e.g., Risk Agent, Contract Agent, Execution Agent) exist; these are functions and DB writes.
+   The core negotiation architecture strictly consists of 4 components:
+   - **Buyer Agent** (LLM-driven proposal engine)
+   - **Seller Agent** (LLM-driven proposal engine calling Economic Model as a tool)
+   - **Policy Engine** (Pure Python, deterministic rule engine)
+   - **Economic Model** (Pure Python mathematical formula)
 3. **Capped Negotiation Protocol:**  
    Negotiations are strictly capped at **max 5 rounds**. No infinite reasoning loops. Negotiable fields are strictly: `price/order_value`, `quantity`, `payment_term_days`, `discount_percent`, `delivery_deadline_days`.
 4. **Strict Pydantic Validation:**  
    All outputs use Pydantic models (`Proposal`, `SellerPolicy`, `BuyerProfile`, `Contract`). Malformed LLM outputs fail the round immediately without guessing or coercing.
 5. **Append-Only Audit Logs:**  
-   Audit logs are immutable append-only records; past decision entries are never updated or mutated.
+   Audit logs are immutable append-only records stored in SQLite; past decision entries are never updated or mutated.
 
 ---
 
-## 3. Directory & Repository Layout
+## 3. Repository Directory & Complete File Breakdown
 
 ```
 termwise/
-├── README.md
-├── ARCHITECTURE.md
-├── AGENT.md
-├── CONTRIBUTING.md
-├── PROJECT_CONTEXT.md            # Comprehensive architecture & context document
-├── requirements.txt
-├── .env.example
-├── .env                          # Real API keys (GEMINI_API_KEY, RAZORPAY_API_KEY, RAZORPAY_KEY_SECRET)
-├── .gitignore
+├── README.md                      # High-level hackathon documentation & demo overview
+├── ARCHITECTURE.md                # System design doc & 4-component specification
+├── AGENT.md                       # Non-negotiable AI guidelines & scope guardrails
+├── CONTRIBUTING.md                # Setup instructions & developer guide
+├── PROJECT_CONTEXT.md             # Exhaustive technical context & deep-dive reference
+├── requirements.txt               # Dependencies (FastAPI, Streamlit, Pydantic, Pytest, Requests, Matplotlib)
+├── .env.example                   # Environment variable template
+├── .env                           # Local API keys (gitignored)
+├── .gitignore                     # Git exclusions (.env, .venv, __pycache__, *.db)
 │
-├── core/                         # Pure Python, deterministic, unit-tested core layer
+├── core/                          # Deterministic, zero external deps — Credibility Layer
 │   ├── __init__.py
-│   ├── models.py                 # Pydantic schemas: Proposal, SellerPolicy, BuyerProfile, Contract, Decision
-│   ├── policy_engine.py          # validate(proposal, policy) -> APPROVE / REJECT / ESCALATE
-│   └── economic_model.py         # score(proposal, buyer, policy) -> expected_value
+│   ├── models.py                  # Pydantic schemas (Proposal, SellerPolicy, BuyerProfile, Contract, Decision)
+│   ├── policy_engine.py           # validate() -> APPROVE / REJECT / ESCALATE
+│   ├── economic_model.py          # calculate_expected_value() financial formula
+│   └── contract.py                # finalize_contract() hard-gated contract builder
 │
-├── agents/                       # LLM proposal layer (Google Gemini 2.5 Flash + fallback)
+├── agents/                        # Proposal Layer (LLM proposals & turn state machine)
 │   ├── __init__.py
-│   ├── buyer_agent.py            # Buyer LLM proposal & counter-proposal logic
-│   ├── seller_agent.py           # Seller LLM logic (calls economic_model as tool)
-│   ├── prompts.py                # System prompts for Buyer and Seller personas
-│   └── orchestrator.py           # Negotiation state machine: 5-round cap & policy engine gating
+│   ├── prompts.py                 # System prompts for Buyer & Seller personas
+│   ├── buyer_agent.py             # Buyer LLM proposal & response agent
+│   ├── seller_agent.py            # Seller LLM agent with economic model tool integration
+│   └── orchestrator.py            # Turn-based state machine & policy engine gating
 │
-├── razorpay/                     # Razorpay Test Mode execution rail
+├── razorpay/                      # Execution Rail (Test Mode REST API & Webhooks)
 │   ├── __init__.py
-│   ├── client.py                 # create_order(), create_payment_link() with expire_by
-│   └── webhooks.py               # HMAC SHA256 signature verification & payload parsing
+│   ├── client.py                  # HTTP Basic Auth client (Orders & Payment Links with expire_by)
+│   └── webhooks.py                # HMAC SHA256 signature verification & payload parsing
 │
-├── api/                          # FastAPI REST API & SQLite storage
+├── api/                           # REST API & Audit Persistence Layer
 │   ├── __init__.py
-│   ├── main.py                   # App entrypoint, /negotiate/run, /audit, /webhooks/razorpay
-│   ├── db.py                     # SQLite manager & append-only audit trail logger
-│   └── schema.sql                # DDL for negotiations & audit_log tables
+│   ├── main.py                    # FastAPI entrypoint (/negotiate/run, /audit, /webhooks/razorpay)
+│   ├── approval.py                # Human supervisor escalation override endpoint
+│   ├── db.py                      # SQLite database manager & audit trail logger
+│   └── schema.sql                 # DDL for negotiations and audit_log tables
 │
-├── simulator/                    # Synthetic data generator & strategy evaluation
+├── simulator/                     # Synthetic Evaluation & Baseline Engine
 │   ├── __init__.py
-│   ├── generate.py               # Fixed-seed generator (50 synthetic buyer/seller pairs)
-│   ├── baselines.py              # Baseline strategies: Fixed Net-30 & Rule-Based
-│   └── run_eval.py               # Evaluation runner producing eval_result.png bar chart
+│   ├── generate.py                # Fixed-seed synthetic dataset generator (50 buyer/seller pairs)
+│   ├── baselines.py               # Fixed Net-30 and Rule-Based baseline strategies
+│   └── run_eval.py                # Evaluator runner producing eval_result.png bar chart
 │
-├── frontend/                     # Streamlit demo surface
-│   └── app.py                    # Live negotiation UI, policy badges, audit trail & eval chart
+├── frontend/                      # User Interface Layer
+│   └── app.py                     # Streamlit web dashboard with 3 interactive tabs
 │
-└── tests/                        # Comprehensive test suite (16 tests, 100% passing)
+└── tests/                         # Full Automated Test Suite (21 Tests, 100% Pass)
+    ├── __init__.py
     ├── core/
-    │   ├── test_policy_engine.py
-    │   └── test_economic_model.py
+    │   ├── __init__.py
+    │   ├── test_policy_engine.py   # Policy engine branch tests
+    │   └── test_economic_model.py  # Financial EV formula tests
     ├── agents/
-    │   └── test_schema_validation.py
+    │   ├── __init__.py
+    │   └── test_schema_validation.py # Pydantic LLM JSON schema validation tests
+    ├── razorpay/
+    │   ├── __init__.py
+    │   └── test_webhook_signature.py # Webhook HMAC security & tampering tests
     └── e2e/
-        ├── test_policy_rejection.py # Failure Case 1
-        ├── test_escalation.py       # Failure Case 2
-        └── test_payment_expiry.py   # Failure Case 3
+        ├── __init__.py
+        ├── test_policy_rejection.py  # Failure Case 1: Policy Rejection
+        ├── test_escalation.py        # Failure Case 2: Human Escalation
+        ├── test_payment_expiry.py    # Failure Case 3: Payment Expiry Webhook
+        └── test_max_rounds.py        # Failure Case 5: Unwinnable Max Rounds
 ```
 
 ---
 
-## 4. Component Technical Specifications & Working Mechanisms
+## 4. Component Technical Deep-Dive
 
-### A. Data Schemas (`core/models.py`)
-- **`Decision` (Enum):** `APPROVE`, `REJECT`, `ESCALATE`
-- **`Proposal` (BaseModel):**
-  - `order_value: float` (e.g., 1,000,000.0)
+### A. Core Layer
+
+#### 1. `core/models.py`
+Defines the strict Pydantic schemas that enforce data types across the entire application:
+- `Decision(Enum)`: `APPROVE`, `REJECT`, `ESCALATE`
+- `Proposal(BaseModel)`:
+  - `order_value: float` (Total order amount in INR)
   - `currency: str = "INR"`
-  - `quantity: int` (e.g., 500)
-  - `payment_term_days: int` (e.g., 45)
-  - `discount_percent: float` (e.g., 0.5)
-  - `delivery_deadline_days: int` (e.g., 14)
-  - `round: int = 1` (1 to 5)
+  - `quantity: int` (Number of units)
+  - `payment_term_days: int` (Credit term in days, e.g. 30, 45, 60)
+  - `discount_percent: float` (Early payment discount, e.g. 2.0%)
+  - `delivery_deadline_days: int` (Expected delivery SLA)
+  - `round: int = 1` (Current round index 1..5)
   - `proposer: str` ("buyer" or "seller")
-- **`SellerPolicy` (BaseModel):** `min_term_days`, `max_term_days`, `max_discount_percent`, `auto_approval_limit`, `cash_pressure_level`, `financing_cost_annual_percent`.
-- **`BuyerProfile` (BaseModel):** `buyer_id`, `reliability_score` (0.0 to 1.0), `avg_payment_delay_days`, `preferred_term_days`.
+- `SellerPolicy(BaseModel)`: Defines merchant hard bounds (`min_term_days`, `max_term_days`, `max_discount_percent`, `auto_approval_limit`, `cash_pressure_level`, `financing_cost_annual_percent`).
+- `BuyerProfile(BaseModel)`: Buyer characteristics (`buyer_id`, `reliability_score` 0.0..1.0, `avg_payment_delay_days`, `preferred_term_days`).
+- `Contract(BaseModel)`: Immutable finalized agreement (`contract_id`, `negotiation_id`, `agreed_proposal`, `due_date`, `status`).
 
-### B. Deterministic Policy Engine (`core/policy_engine.py`)
-Validates candidate proposals against seller policy bounds without calling any LLM:
+#### 2. `core/policy_engine.py`
+The deterministic gatekeeper. Zero LLM involvement.
 ```python
 def validate(proposal: Proposal, policy: SellerPolicy) -> Decision:
     if proposal.discount_percent > policy.max_discount_percent:
@@ -132,121 +167,174 @@ def validate(proposal: Proposal, policy: SellerPolicy) -> Decision:
     return Decision.APPROVE
 ```
 
-### C. Economic Evaluation Model (`core/economic_model.py`)
-Scores the expected net financial value of a proposal:
-$$\text{Expected Value} = (\text{order\_value} \times P_{\text{on\_time}}) - \left(\text{order\_value} \times \frac{\text{term}}{365} \times \text{financing\_rate}\right) - (\text{order\_value} \times \text{discount}) - (\text{order\_value} \times (1 - P_{\text{on\_time}}) \times \text{loss\_factor})$$
+#### 3. `core/economic_model.py`
+Quantifies the net expected financial value ($EV$) of a proposal considering financing costs, discounts, and default risk:
+$$\text{Financing Cost} = \text{order\_value} \times \left(\frac{\text{payment\_term\_days}}{365}\right) \times \text{financing\_rate}$$
+$$\text{Discount Amount} = \text{order\_value} \times \left(\frac{\text{discount\_percent}}{100}\right)$$
+$$\text{Default Loss} = \text{order\_value} \times (1 - \text{reliability\_score}) \times 0.5$$
+$$\text{Expected Value } (EV) = (\text{order\_value} \times \text{reliability\_score}) - \text{Financing Cost} - \text{Discount Amount} - \text{Default Loss}$$
 
-### D. LLM Agents (`agents/buyer_agent.py`, `agents/seller_agent.py`)
-- Integrated with **Google Gemini 2.5 Flash API** using `responseMimeType: "application/json"`.
-- Requests structured JSON matching `Proposal` schema.
-- Uses `validate_llm_output()` to strictly validate LLM output via Pydantic.
-- Falls back to deterministic rule-based proposals if LLM API is unavailable or returns invalid JSON.
-
-### E. Negotiation Orchestrator (`agents/orchestrator.py`)
-- State machine managing turn-based negotiation between `BuyerAgent` and `SellerAgent`.
-- Validates every proposal using `policy_engine.validate()`.
-- Caps negotiations at 5 rounds maximum.
-- Returns status (`APPROVED`, `REJECTED`, `ESCALATED`, or `MAX_ROUNDS_EXCEEDED`) along with full round-by-round audit log.
-
-### F. Razorpay Test Mode Integration (`razorpay/client.py`, `razorpay/webhooks.py`)
-- **`create_order()`:** Creates Razorpay Order in test mode with amount in paise (`int(order_value * 100)`).
-- **`create_payment_link()`:** Creates Razorpay Payment Link with `expire_by = now + (payment_term_days * 86400)`.
-- **`verify_webhook_signature()`:** Verifies Razorpay `X-Razorpay-Signature` HMAC SHA256 header using constant-time comparison.
-
----
-
-## 5. Three Key Failure Cases Handled
-
-1. **Failure Case 1: Policy Rejection**  
-   - *Trigger:* Buyer proposes terms outside seller bounds (e.g., 15% discount vs max 5%).  
-   - *Handling:* Policy engine returns `Decision.REJECT`. Seller agent counter-offers within bounds or negotiation terminates gracefully without invalid contract creation.
-2. **Failure Case 2: Human Escalation**  
-   - *Trigger:* Order value exceeds seller `auto_approval_limit` (e.g., ₹2.5M order vs ₹1.0M limit).  
-   - *Handling:* Policy engine returns `Decision.ESCALATE`. Status set to `ESCALATED`, routing transaction to human review and blocking automated Razorpay execution.
-3. **Failure Case 3: Payment Link Expiry / Overdue**  
-   - *Trigger:* Payment link reaches `expire_by` due date unpaid. Razorpay emits `payment_link.expired` webhook.  
-   - *Handling:* Webhook handler validates signature, updates status to `OVERDUE_EXPIRED`, and logs record to append-only audit trail.
-
----
-
-## 6. Test Suite & Verification Examples
-
-The codebase includes 16 automated tests across `tests/core/`, `tests/agents/`, and `tests/e2e/` (100% passing).
-
-### Example 1: Unit Test for Policy Engine (`tests/core/test_policy_engine.py`)
+#### 4. `core/contract.py`
+Hard-gated contract finalizer:
 ```python
-def test_validate_reject_excessive_discount():
-    policy = SellerPolicy(max_discount_percent=5.0)
-    proposal = Proposal(
-        order_value=500000.0,
-        quantity=200,
-        payment_term_days=30,
-        discount_percent=10.0,  # Breaches 5% limit
-        delivery_deadline_days=10,
-        proposer="buyer"
-    )
-    assert validate(proposal, policy) == Decision.REJECT
-```
-
-### Example 2: End-to-End Escalation Test (`tests/e2e/test_escalation.py`)
-```python
-def test_e2e_escalation_over_auto_approval_limit():
-    policy = SellerPolicy(auto_approval_limit=1000000.0)
-    buyer = BuyerProfile(buyer_id="B_LARGE", preferred_term_days=45)
-    
-    status, history, proposal = run_negotiation_loop(
-        buyer_profile=buyer,
-        seller_policy=policy,
-        order_value=2500000.0,  # Exceeds limit
-        max_rounds=5
-    )
-    
-    assert status == "ESCALATED"
-    assert history[0]["decision"] == Decision.ESCALATE.value
-```
-
-### Example 3: End-to-End Payment Expiry Test (`tests/e2e/test_payment_expiry.py`)
-```python
-def test_e2e_payment_link_expiry_and_webhook_handling():
-    init_db()
-    rzp = RazorpayClient()
-    proposal = Proposal(order_value=500000.0, quantity=200, payment_term_days=30, discount_percent=1.0, delivery_deadline_days=10, proposer="seller")
-    
-    order = rzp.create_order(proposal, "neg_expiry_001")
-    plink = rzp.create_payment_link(proposal, order["id"])
-    
-    # Simulate webhook event
-    payload = {"event": "payment_link.expired", "payload": {"payment_link": {"entity": {"id": plink["id"]}}}}
-    event_name, target_id, _ = process_webhook_event(payload)
-    
-    log_audit_entry("neg_expiry_001", "razorpay_webhook", event_name, f"Link {target_id} expired", "OVERDUE_EXPIRED", "Expired unpaid")
-    trail = get_audit_trail("neg_expiry_001")
-    assert trail[-1]["decision"] == "OVERDUE_EXPIRED"
+def finalize_contract(proposal: Proposal, decision: Decision, negotiation_id: str) -> Contract:
+    if decision != Decision.APPROVE:
+        raise ValueError("Contracts can ONLY be constructed from proposals validated as Decision.APPROVE.")
+    ...
 ```
 
 ---
 
-## 7. How to Run the Project
+### B. Agentic LLM Layer
 
-1. **Install Dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. **Configure Environment (`.env`):**
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key
-   RAZORPAY_API_KEY=rzp_test_xxxxxxxxx
-   RAZORPAY_KEY_SECRET=your_razorpay_secret
-   ```
-3. **Run Test Suite:**
-   ```bash
-   pytest -v
-   ```
-4. **Launch FastAPI Backend:**
-   ```bash
-   uvicorn api.main:app --reload
-   ```
-5. **Launch Streamlit Demo Dashboard:**
-   ```bash
-   streamlit run frontend/app.py
-   ```
+#### 1. `agents/prompts.py`
+Contains strict JSON system prompts for Buyer and Seller personas:
+- **Buyer System Prompt:** Instructs LLM to act as a commercial buyer trying to maximize payment term days and early payment discounts while outputting strictly valid JSON matching `Proposal`.
+- **Seller System Prompt:** Instructs LLM to act as a seller merchant evaluating proposals against expected financial value ($EV$) and formulating optimal counter-proposals.
+
+#### 2. `agents/buyer_agent.py` & `agents/seller_agent.py`
+- Calls Google Gemini 2.5 Flash API endpoint: `POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}`
+- Employs `generationConfig: {"responseMimeType": "application/json"}` to force structured JSON responses.
+- Implements `validate_llm_output()` with Pydantic validation. If the LLM returns invalid JSON or missing fields, the agent catches `ValidationError` and falls back to a safe, rule-based proposal.
+
+#### 3. `agents/orchestrator.py`
+The turn-based state machine enforcing policy engine gating and the 5-round cap:
+1. Round 1 opening proposal from `BuyerAgent`.
+2. Validates proposal via `policy_engine.validate()`.
+3. If `Decision.ESCALATE`: Returns status `"ESCALATED"`.
+4. If `Decision.APPROVE` (from buyer): Calls `finalize_contract()` and returns `"APPROVED"`.
+5. If `Decision.REJECT`: `SellerAgent` counter-proposes. `BuyerAgent` responds in next turn.
+6. Caps loop at round 5. If round 5 completes without agreement: Returns status `"MAX_ROUNDS_EXCEEDED"`.
+
+---
+
+### C. Razorpay Execution Layer
+
+#### 1. `razorpay/client.py`
+Communicates with Razorpay Test Mode REST API (`https://api.razorpay.com/v1`) using HTTP Basic Authentication (`auth=(KEY_ID, KEY_SECRET)`):
+- `create_order(proposal, negotiation_id)`: Creates Razorpay Order (`amount = int(order_value * 100)` in paise).
+- `create_payment_link(proposal, order_id)`: Creates Razorpay Payment Link with `expire_by = current_timestamp + (payment_term_days * 86400)`.
+
+#### 2. `razorpay/webhooks.py`
+- `verify_webhook_signature(body, signature, secret)`: Computes HMAC SHA256 signature over raw byte body and compares against `X-Razorpay-Signature` using `hmac.compare_digest()` constant-time comparison to prevent timing attacks.
+- `process_webhook_event(payload)`: Parses webhook event payload (`payment_link.paid`, `payment_link.expired`) and extracts target entity IDs.
+
+---
+
+### D. API & Storage Layer
+
+#### 1. `api/schema.sql` & `api/db.py`
+Defines SQLite database tables:
+- `negotiations`: Tracks negotiation sessions, status, and final agreed proposal.
+- `audit_log`: Immutable append-only audit trail logging `negotiation_id`, `actor`, `action`, `payload_summary`, `decision`, `reason`, `created_at`.
+
+#### 2. `api/main.py`
+FastAPI service exposing REST endpoints:
+- `POST /negotiate/run`: Runs full AI-to-AI negotiation, executes policy engine checks, triggers Razorpay execution if approved, and logs all audit trail entries.
+- `GET /negotiate/{id}/audit`: Returns complete chronological audit trail for a negotiation.
+- `POST /webhooks/razorpay`: Receives Razorpay webhook notifications, validates HMAC signature, and updates status.
+
+#### 3. `api/approval.py`
+- `POST /negotiate/override-approval`: Human supervisor override route for escalated negotiations. Bypasses LLM agents completely. Calls `finalize_contract()` → creates Razorpay Order & Payment Link → logs audit entries.
+
+---
+
+### E. Simulator & Evaluation Engine
+
+- `simulator/generate.py`: Uses fixed seed (seed=42) to generate 50 synthetic buyer/seller profile pairs with realistic financial metrics.
+- `simulator/baselines.py`: Implements two baseline strategies:
+  1. **Fixed Net-30 Baseline:** Rigidly sets 30-day payment term with 0% discount.
+  2. **Rule-Based Baseline:** Linear heuristic discounting.
+- `simulator/run_eval.py`: Compares Termwise Agentic System against both baselines over 50 negotiations, producing `eval_result.png` bar chart demonstrating higher average expected financial value ($EV$).
+
+---
+
+### F. Streamlit Frontend Dashboard
+
+[frontend/app.py](file:///c:/Users/shash/Termwise/frontend/app.py) provides an interactive Streamlit UI with 3 tabs:
+1. **🚀 Live Negotiation Demo:** Live control panel for buyer reliability, order value, and seller policy bounds. Renders round-by-round proposals, policy badges, and clickable Razorpay payment link.
+2. **📜 Append-Only Audit Trail:** Searchable dataframe view of the SQLite immutable audit log.
+3. **📊 Evaluation Chart:** Interactive evaluation runner displaying `eval_result.png`.
+
+---
+
+## 5. Handled Failure Modes & Edge Cases
+
+| Failure Mode | Root Cause / Trigger | Automated System Recovery |
+| :--- | :--- | :--- |
+| **1. Policy Rejection** | Buyer requests terms outside seller policy bounds (e.g. 15% discount vs max 5%). | Policy Engine returns `Decision.REJECT`. Seller agent counter-offers within bounds or negotiation terminates gracefully without creating an invalid contract. |
+| **2. Human Escalation** | Order value (e.g. ₹2.5M) exceeds seller `auto_approval_limit` (₹1.0M). | Policy Engine returns `Decision.ESCALATE`. Status set to `ESCALATED`. Auto-execution blocked. Human override route (`/negotiate/override-approval`) required. |
+| **3. Payment Expiry / Overdue** | Buyer fails to pay Razorpay Payment Link before Net-N due date. | Razorpay emits `payment_link.expired` webhook. Webhook handler verifies HMAC signature, marks status `OVERDUE_EXPIRED`, and logs to append-only audit trail. |
+| **4. Malformed LLM Output** | LLM API returns invalid JSON or misses required fields. | Pydantic validation fails (`ValidationError`). Agent catches error and seamlessly falls back to deterministic rule-based proposal. |
+| **5. Unwinnable Negotiation** | Buyer and Seller policy bounds are mutually exclusive. | State machine reaches 5-round cap, terminates with status `MAX_ROUNDS_EXCEEDED`, and creates zero contracts. |
+| **6. Forged Webhook Attack** | Attacker sends fake webhook event with tampered payload or invalid signature. | `verify_webhook_signature()` fails HMAC SHA256 check and returns HTTP 400 Bad Request immediately. |
+
+---
+
+## 6. Comprehensive Test Suite Matrix (21/21 Passing)
+
+Run tests using: `pytest -v`
+
+```
+tests/agents/test_schema_validation.py::test_valid_llm_json_validation PASSED
+tests/agents/test_schema_validation.py::test_malformed_json_syntax_error PASSED
+tests/agents/test_schema_validation.py::test_missing_required_pydantic_field PASSED
+tests/agents/test_schema_validation.py::test_invalid_type_field PASSED
+tests/core/test_economic_model.py::test_economic_model_perfect_buyer PASSED
+tests/core/test_economic_model.py::test_economic_model_low_reliability_buyer PASSED
+tests/core/test_economic_model.py::test_economic_model_zero_discount_and_zero_term PASSED
+tests/core/test_economic_model.py::test_economic_model_max_term_increases_financing_cost PASSED
+tests/core/test_policy_engine.py::test_validate_approve PASSED
+tests/core/test_policy_engine.py::test_validate_reject_excessive_discount PASSED
+tests/core/test_policy_engine.py::test_validate_reject_term_too_long PASSED
+tests/core/test_policy_engine.py::test_validate_reject_term_too_short PASSED
+tests/core/test_policy_engine.py::test_validate_escalate_over_auto_approval_limit PASSED
+tests/e2e/test_escalation.py::test_e2e_escalation_over_auto_approval_limit PASSED
+tests/e2e/test_max_rounds.py::test_e2e_max_rounds_exceeded_termination PASSED
+tests/e2e/test_payment_expiry.py::test_e2e_payment_link_expiry_and_webhook_handling PASSED
+tests/e2e/test_policy_rejection.py::test_e2e_policy_rejection_excessive_discount PASSED
+tests/razorpay/test_webhook_signature.py::test_valid_signature_is_accepted PASSED
+tests/razorpay/test_webhook_signature.py::test_forged_signature_is_rejected PASSED
+tests/razorpay/test_webhook_signature.py::test_missing_signature_is_rejected PASSED
+tests/razorpay/test_webhook_signature.py::test_tampered_payload_invalidates_valid_signature PASSED
+```
+
+---
+
+## 7. Environment & Deployment Setup Guide
+
+### Prerequisites
+- Python 3.10+
+- Git
+
+### Installation
+```bash
+git clone https://github.com/Akuma21205/Termwise.git
+cd Termwise
+pip install -r requirements.txt
+```
+
+### Environment Configuration (`.env`)
+Create a `.env` file in the project root (never committed to git):
+```env
+GEMINI_API_KEY=your_google_gemini_api_key
+RAZORPAY_API_KEY=rzp_test_xxxxxxxxx
+RAZORPAY_KEY_SECRET=your_razorpay_secret
+```
+
+### Running Automated Test Suite
+```bash
+pytest -v
+```
+
+### Launching FastAPI Backend Server
+```bash
+uvicorn api.main:app --reload
+```
+Access interactive OpenAPI docs at: `http://localhost:8000/docs`
+
+### Launching Streamlit Web App Dashboard
+```bash
+streamlit run frontend/app.py
+```
+Access interactive dashboard at: `http://localhost:8501`
