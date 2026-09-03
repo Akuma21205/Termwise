@@ -23,7 +23,7 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
   onRunNegotiation,
   isLoading,
 }) => {
-  const applyPreset = (preset: 'enterprise' | 'high_risk' | 'cash_pressure') => {
+  const applyPreset = (preset: 'enterprise' | 'high_risk' | 'cash_pressure' | 'adversarial') => {
     if (preset === 'enterprise') {
       setBuyerProfile({
         buyer_id: 'B_ENT_901',
