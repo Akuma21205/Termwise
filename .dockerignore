@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+*.db
+.env
+.env.example
+web/node_modules
+web/dist
+tests/
+eval_result.png
+uv.lock
