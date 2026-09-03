@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Tuple, Optional
 from core.models import Proposal, SellerPolicy, BuyerProfile, Decision, Contract
-from core.policy_engine import validate
+from core.policy_engine import validate_with_reason
 from core.contract import finalize_contract
 from agents.buyer_agent import BuyerAgent
 from agents.seller_agent import SellerAgent
@@ -35,14 +35,14 @@ def run_negotiation_loop(
     current_proposal = buyer.propose(order_value, round_num=1)
     
     for current_round in range(1, max_rounds + 1):
-        decision = validate(current_proposal, seller_policy)
+        decision, reason = validate_with_reason(current_proposal, seller_policy)
         
         history.append({
             "round": current_round,
             "proposer": current_proposal.proposer,
             "proposal": current_proposal.model_dump(),
             "decision": decision.value,
-            "reason": f"Policy engine validated proposal from {current_proposal.proposer}: {decision.value}"
+            "reason": reason
         })
         
         # Escalation condition (e.g. order value > auto approval limit)
