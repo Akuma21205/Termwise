@@ -68,6 +68,20 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
         financing_cost_annual_percent: 15.0,
         auto_approval_limit: 2000000,
       }));
+    } else if (preset === 'adversarial') {
+      setBuyerProfile({
+        buyer_id: 'B_ADV_999',
+        reliability_score: 0.55,
+        avg_payment_delay_days: 20,
+        preferred_term_days: 90,
+      });
+      setOrderValue(800000);
+      setSellerPolicy((prev) => ({
+        ...prev,
+        max_discount_percent: 1.0,
+        max_term_days: 30,
+        auto_approval_limit: 2000000,
+      }));
     }
   };
 
@@ -86,7 +100,7 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
         {/* Quick Presets */}
         <div className="space-y-1.5">
           <label className="text-[11px] font-mono text-gray-400 uppercase tracking-wider block">QUICK SCENARIO PRESETS</label>
-          <div className="grid grid-cols-3 gap-1 font-mono text-[10px]">
+          <div className="grid grid-cols-2 gap-1 font-mono text-[10px]">
             <button
               type="button"
               onClick={() => applyPreset('enterprise')}
@@ -107,6 +121,13 @@ export const ConfigSidebar: React.FC<ConfigSidebarProps> = ({
               className="bg-[#0A0B0D] hover:bg-emerald-950/40 border border-[#262830] hover:border-emerald-500/50 text-emerald-300 py-1.5 px-1 rounded-[4px] font-medium transition-all"
             >
               ⚡ Fast Cash
+            </button>
+            <button
+              type="button"
+              onClick={() => applyPreset('adversarial')}
+              className="bg-[#0A0B0D] hover:bg-red-950/40 border border-[#262830] hover:border-red-500/50 text-red-300 py-1.5 px-1 rounded-[4px] font-medium transition-all"
+            >
+              🔥 Adversarial
             </button>
           </div>
         </div>
