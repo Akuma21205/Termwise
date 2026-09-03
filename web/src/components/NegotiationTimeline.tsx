@@ -101,7 +101,7 @@ export const NegotiationTimeline: React.FC<NegotiationTimelineProps> = ({
             onClick={onOpenSupervisorGate}
             className="bg-amber-500 hover:bg-amber-400 text-black font-mono text-xs font-bold py-2 px-3 rounded-[4px] transition-all flex items-center space-x-1.5 shadow"
           >
-            <span>REVIEW IN SUPERVISOR GATE &rarr;</span>
+            <span>⏸ Paused — awaiting human review &nbsp;·&nbsp; REVIEW IN SUPERVISOR GATE &rarr;</span>
           </button>
         )}
       </div>
