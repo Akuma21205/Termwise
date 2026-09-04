@@ -158,5 +158,5 @@ Razorpay, so choose on evidence, not brand)
 - Agent orchestration: plain state machine unless LangGraph's conditional-transition
   handling actually earns its complexity — don't add it by default
 - DB: SQLite for the hackathon (Postgres if there's time pressure to look "production")
-- Frontend: Streamlit unless there's spare time for React — backend is the point
+- Frontend: React 19 + Vite + TailwindCSS 4 (served as static SPA via FastAPI in production)
 - Payments: Razorpay Test Mode only
